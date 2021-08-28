@@ -1,10 +1,10 @@
 # For technical reasons, this file is *NOT* reloaded automatically when you use
 # 'bundle exec jekyll serve'. If you change this file, please restart the server process.
 
-title: Read The Elements of Statistical Learning book
+title: Auto Machine Learning with R-h2o
 description: >- # this means to ignore newlines until "baseurl:"
-This is my note written when I read the book ["The Elements of Statistical Learning: Data Mining, Inference, and Prediction, Second Edition" by Trevor Hastie, Robert Tibshirani, and Jerome Friedman](https://www.amazon.com/Elements-Statistical-Learning-Prediction-Statistics/dp/0387848576)  .
-baseurl: "/read_ml_book" # the subpath of the site
+Data wrangling with tidyverse and AutoML with R-h2o .
+baseurl: "/ml_with_r_h2o" # the subpath of the site
 url: "https://tranktle.github.io" # the base hostname & protocol for the site
 og_image: /assets/img/profile-pic.jpg
 #google_analytics: "UA-121636368-3"
