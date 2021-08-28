@@ -1,0 +1,388 @@
+---
+title: "1_Read and Explore and Clean the data with R-tidyverse"
+author: "Tran Le"
+date: "8/8/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    number_sections: true
+    # code_folding: hide
+---
+
+```{r setup, include=TRUE, message = FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse=TRUE, comment=">>")
+library(tidyverse) #to use with many purpose: data wrangling 
+library(h2o)
+library(visdat)  # to visualize missing values
+library(mice)
+library(Hmisc)  # to draw histogram of all column in a R data frame
+source("./Utilities.R") # You need to list the source to the Utilities.R file that keeps function used in this file
+```
+
+```{r klippy, echo=FALSE}
+klippy::klippy(position = c("top", "right"), tooltip_message = "Copy code")  #to insert a copy to clipboard buttons in HTML document https://github.com/RLesur/klippy
+```
+
+
+# Introduction
+
+This project uses the House Prices data gotten from [Kaggle](https://www.kaggle.com/c/house-prices-advanced-regression-techniques). 
+
+I have seen people in Kaggle use Linear Regression, Generalized Linear Regression, XGBoost, Support Vector Machine, ... This article is about using [Auto Machine Learning (AutoML) with package h2o](https://docs.h2o.ai/h2o/latest-stable/h2o-docs/automl.html).
+
+The current version of AutoML trains and cross-validates the following algorithms (in the following order):  three pre-specified XGBoost GBM (Gradient Boosting Machine) models, a fixed grid of GLMs, a default Random Forest (DRF), five pre-specified H2O GBMs, a near-default Deep Neural Net, an Extremely Randomized Forest (XRT), a random grid of XGBoost GBMs, a random grid of H2O GBMs, and a random grid of Deep Neural Nets. 
+
+AutoML then trains two Stacked Ensemble models, one from all of the models created, one from the best model from each algorithm class/family. Both of the ensembles should produce better models than any individual model from the AutoML run except for some rare cases.
+
+The advantage of using AutoML is it can help produce a better prediction. Besides, after fitting models, we can do the model explanation that can help recognize "important" factors that affect the outcomes and also how they affect the outcomes. ([Link to the"Interpretable Machine Learning" book ](https://christophm.github.io/interpretable-ml-book/)).
+
+My goal for this project is to provide a detailed explanation of how to use AutoML with data having a continuous outcome. All of the codes are put in functions with detailed explanations that can be conveniently used later on with other data.  I will first write some simple code for exploring the data then jump into our main part, AutoML.
+
+
+# Some note before working with the Project
+
+1- You need to create a project on R. This is [how](https://support.rstudio.com/hc/en-us/articles/200526207-Using-Projects). It will make your project be much organized and make sure that your code, data, and results will not be mixed up together.\
+
+2- With this project, I first create a new project on a folder with the same name, let say `ml_with_r_h2o`. Then I will create a folder, named `code` that will contain all of the Rfile.script or Rfilename.Rmd that I will use. Also, create a folder named "house_dat" that contains train and test data. All of the files will be uploaded on my github account in the folder named ml_with_r_h2o.
+
+3- It is better to read this article when you are familiar with data wrangling using tidyverse. A good book for studying is [R for Data Science](https://r4ds.had.co.nz/), or a more advanced book, [Advanced R](https://adv-r.hadley.nz/). Here are some things that I use in this project that you might found in these books or use the link provided:\
+  - How to reuse functions that you create in  Scrips: use [source](https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/source) of a function.\
+  - Using [glue](https://glue.tidyverse.org/) to write shorter and well-organized R code.\
+  
+
+# Read file, explore the data
+
+First, we read the data. Note that the output is SalePrice-the property's sale price in dollars.
+
+```{r readdata, message=FALSE}
+train <- read_csv(file="../house_dat/train.csv")
+test <- read_csv(file="../house_dat/test.csv")
+```
+Dimension of the train and test sets. We see from the below that the train set has one more column than the test set.
+
+```{r dimension}
+cat("Dimension of the train set:", dim(train), "\n")
+cat("Dimension of the test set:", dim(test), "\n")
+```
+
+Let's see what column is in the train but the test set. We see that the column SalePrice (the output) is on the train but not test and all of the columns on the test set are in the train set.
+
+```{r}
+train_col_name <- colnames(train)
+test_col_name <- colnames(test)
+# Now we use setdiff to see what column is on the train but not test set
+in_train_but_test <- setdiff(train_col_name, test_col_name)
+cat("column is on the train but not test set: ", in_train_but_test, "\n")
+in_test_but_train <- setdiff(test_col_name, train_col_name)
+cat("column is on the test but not train set: ", in_test_but_train)
+```
+```{r colnames}
+cat("column names of the train set: ", train_col_name)
+# test_col_name
+```
+
+# Work with description file
+
+## Create description file
+
+We will use a function, named `create_descrip_tibble_f` to create a `des_file`, a description tibble contains column names of the data and categorical columns' factor values. See the file `2_WorkWithDescriptionFile.Rmd` for the detailed explanation of how to create the function.
+
+***Note***: many of the functions used in this file are in the `Utilities.R` file, this helps this file not being unnecessary long. You will need to add `source("./Utilities.R")` as I do on the top of this file to use these functions. 
+
+```{r create_descrip_tibble, warning=FALSE}
+des_file <- create_descrip_tibble_f()
+head(des_file)
+```
+
+# Correcting column names
+
+We want to have consistency between the column names that appeared on the data and the ones that appeared on the description file. We assume that the column names that appeared on the description file are correct and correct our data according to it.
+
+Find names of columns available in the description file
+
+```{r}
+des_col_name <- des_file %>% filter(num_fac %in%c("num_col", "fac_col")) %>% pull(name)
+```
+Here are the column names that are in the train set but not in the description file
+```{r}
+setdiff(train_col_name, des_col_name)
+```
+Here are the column names that are in the description file but not in the train set
+```{r}
+setdiff(des_col_name, train_col_name)
+```
+So, we want to change the column names so that the train/test set and the description are consistent
+
+```{r}
+train <- train %>% rename(Bedroom = BedroomAbvGr, Kitchen= KitchenAbvGr)
+test <- test %>% rename(Bedroom = BedroomAbvGr, Kitchen= KitchenAbvGr)
+```
+
+
+## Convert the columns of the data to the correct types
+
+The columns which are in the list of numerical columns are as.numeric(ed) and the columns which are in the list of characteristic columns are as.factor(ed)
+```{r}
+# Here are name of numerical columns and characteristic columns
+num_col_name <- des_file %>% filter(num_fac =="num_col") %>% pull(name)
+char_col_name <- des_file %>% filter(num_fac =="fac_col") %>% pull(name)
+```
+
+
+```{r}
+train <- train %>%
+         mutate_if(names(.) %in% num_col_name, as.numeric) 
+test <- test %>%
+         mutate_if(names(.) %in% num_col_name, as.numeric) 
+#Note: we can add "%>% mutate_if(names(.) %in% char_col_name, as.factor)" at the end of these line to convert all characteristic columns to factors. However, when we do this, the levels will be fixed, it cause trouble later on when we replace NAs with "None". So we will skip this step for now and will do it later 
+
+```
+
+# Correcting typos of chracteristics columns
+First, we want to trim all white spaces from start and end of string in every characteristic columns
+
+```{r trim_cat_column}
+train <- train %>% mutate_if(is.character, str_trim)
+test <- test %>% mutate_if(is.character, str_trim)
+```
+
+We now find the unique values of characteristic columns that are NOT in the description files. Those are the ones having typo and we need to correct them. We will find  factor levels in the train set. Then factor_levels that are in the train/test set but not in the des_file are the ones that we need to correct
+
+```{r factor_levels}
+# find  factor levels in the train set
+train_factor_levels <- map(train %>% select_if(is.character), unique) %>% unlist() %>% unname()
+# factor_levels that are in the train/test set but not in the des_file are the ones that we need to correct
+fac_need_to_correct <- setdiff( train_factor_levels, des_file %>% filter(num_fac =="fac_val")%>% pull(name))
+fac_need_to_correct <- fac_need_to_correct[!is.na(fac_need_to_correct)]
+fac_need_to_correct 
+```
+ 
+Now, we find names of columns having typos 
+```{r}
+col_have_typo <- map_df(train, function(x) any( x%in% fac_need_to_correct)) %>% pivot_longer(everything()) %>% filter(value==TRUE) %>% pull(name)
+col_have_typo
+```
+```{r}
+# The unique values of those column before typo correcting
+map(train%>% select(col_have_typo), unique)
+```
+
+Now, we correcting those typos in the train and test sets
+
+```{r}
+correct_typo_f <- function(dat){
+  dat <- dat %>%
+    mutate(MSZoning = recode(MSZoning, "C (all)"= "C"), 
+          Neighborhood = recode(Neighborhood, "NAmes"= "Names" ), 
+          BldgType = recode(BldgType, "2fmCon" = "2FmCon", "Duplex"= "Duplx", "Twnhs"="TwnhsI"), 
+          Exterior2nd = recode(Exterior2nd, "Brk Cmn"="BrkComm", "CmentBd"="CemntBd", "Wd Shng"="WdShing"))
+  return(dat)
+}
+
+train <- correct_typo_f(train)
+test <- correct_typo_f(test)
+```
+```{r}
+# The unique values of those column AFTER typo correcting
+map(train%>% select(col_have_typo), unique)
+```
+
+
+# Explore about missing values
+
+## Check the missing values of the data
+
+Find the missing values in all columns and arrange them based on the number of missing values that they have from highest to lowest.
+
+```{r list_missing_values, warning=FALSE}
+train_miss_col <- mis_value_listing_f(train)
+test_miss_col  <- mis_value_listing_f(test)
+## Uncomment to see the table of missing values in each column on the train and test sets
+# train_miss_col
+# test_miss_col
+```
+
+```{r vis_miss}
+train %>% select(train_miss_col$col_name) %>% vis_miss()
+test %>% select(test_miss_col$col_name) %>% vis_miss()
+```
+
+There are some tools and books for working with missing values: \
+- [mice: Multivariate Imputation by Chained Equations](https://amices.org/mice/)\
+- [missForest: Nonparametric Missing Value Imputation using Random Forest](https://cran.rstudio.com/web/packages/missForest/index.html)\
+- [Hmisc: Harrell Miscellaneous](https://cran.r-project.org/web/packages/Hmisc/index.html)\
+- [Book: Fexible Inputation of Missing Data(Stef van Buuren)](https://stefvanbuuren.name/fimd/)
+
+People normally delete all of the columns having more than 30% of missing values. We can't do it with this data. The reason is, with this data, the NAs can be actual missing values or “having no access”. Let's move to the next part.
+
+# Working with NA that does not mean actual missing value
+
+The above figures show that there are some columns having more than 90% of missing values. Check the Alley column (one of the columns having more than 90% missing values on the above figures) on the description file, the NAs can be actual missing values or "having no access". For example, with the Alley column, NA means "No alley access". However, we don't see the value "None" in this column, which means that we have to change the NAs to "None". We also need to check other columns
+
+```{r}
+unique_cha_name <- map(train %>% select_if(is_character), unique)
+head(unique_cha_name)
+```
+
+***The characteristic columns having values NA in the description file are the one that have NA means None***. Let's consider all characteristics columns that have NA in the values to see if NA is actually "missing values" or "having no access". 
+
+Here are the column names of characteristic columns having NAs mean None (See the file 2_WorkWithDescriptionFile.Rmd for explanation about how to creating the function):
+```{r}
+The_char_colname <- find_col_name_f(des_file)
+The_char_colname
+```
+
+ Now, we want to find numerical columns that are related to the characteristic columns having NA means "None". We want to find these columns because, for example, a row having no Garage will have Garage_Area=0, so, the missing values in the column GarageArea that in the row with NA in the "Gara..." column should be imputed by 0.
+ 
+```{r}
+ find_vec <- c('Alley', 'Bsmt','Fire', 'Garage', 'Pool', 'Fence', 'Misc')
+ pattern <- paste(find_vec, collapse="|")
+ train_num_cols <- train %>% select_if(is.numeric) %>% colnames
+ The_num_colname <- grep(pattern, train_num_cols,  value=TRUE)
+ cat("Here are the numerical columns that have NA means 0 if the associative characteristic column also contains NA: \n \n", The_num_colname)
+```
+
+## Now, we want to impute the columns that have NA does not mean missing values.
+
+- Up to now, we have:
+  - The_char_colname: the characteristic columns having NAs mean None.\
+  - The_num_colname: the numerical columns having NA mean 0 if the related factorial columns have NAs in the same row
+
+```{r, warning=FALSE}
+cat("The_char_colname: \n ", The_char_colname, "\n\n")
+# des_file %>% filter(name %in% The_char_colname ) %>% select(c("name", "description"))
+```
+```{r, warning=FALSE}
+cat("The_num_colname: \n ", The_num_colname)
+# des_file %>% filter(name %in% The_num_colname ) %>% select(c("name", "description"))
+```
+
+- The columns in c("Alley", "FireplaceQu", "PoolQC", "Fence", "MiscFeature") don't contain related factorial columns, replace all NA by "None".
+
+- The columns contains "Bsmt" are columns related to basement, if all columns have NAs in the same row, then replaces those NA by None. If one of the does not have missing values, then other missing values are actual missing values. From the below result, we see that when a column has Na then others also have NA in the same row. We will replace all NA of all factorial columns by "None' and of numerical columns by 0. 
+```{r}
+# Uncomment to see the result
+# Bsmt_col <- union(The_char_colname[str_which(The_char_colname, "Bsmt")], The_num_colname[str_which(The_num_colname, "Bsmt")])
+# test_Bsmt_f <- function(set){
+#   for (bs_col in Bsmt_col){
+#   cat("when", bs_col, "has Na \n ")
+#   print(sapply(set %>% filter(is.na(bs_col)) %>% select_if(names(.) %in% Bsmt_col),  function(x) sum(!is.na(x))))}
+# }
+# 
+# test_Bsmt_f(train)
+# test_Bsmt_f(test)
+```
+```{r}
+# # Uncomment to see the result
+# Garage_col <- union(The_char_colname[str_which(The_char_colname, "Garage")], The_num_colname[str_which(The_num_colname, "Garage")])
+# test_Garage_f <- function(set){
+#   for (col in Garage_col){
+#   cat("when", col, "has Na \n ")
+#   print(sapply(set %>% filter(is.na(col)) %>% select_if(names(.) %in% Garage_col),  function(x) sum(!is.na(x))))}
+# }
+# 
+# test_Garage_f(train)
+# test_Garage_f(test)
+```
+```{r}
+# Uncomment to see the result
+Pool_col <- union(The_char_colname[str_which(The_char_colname, "Pool")], The_num_colname[str_which(The_num_colname, "Pool")])
+test_Pool_f <- function(set){
+  for (col in Pool_col){
+  cat("when", col, "has Na \n ")
+  print(sapply(set %>% filter(is.na(col)) %>% select_if(names(.) %in% Pool_col),  function(x) sum(!is.na(x))))}
+}
+
+test_Pool_f(train)
+test_Pool_f(test)
+```
+
+From the above observation, we will all NA of all characteristics  columns by "None' and of numerical columns by 0
+
+```{r}
+# replace all NA of all characteristics columns by "None' and of numerical columns by 0
+train <- train %>%
+  mutate_if(names(.) %in% The_char_colname, replace_na, "None") %>%
+  mutate_if(names(.) %in% The_num_colname, replace_na, 0)
+test <- test %>%
+  mutate_if(names(.) %in% The_char_colname, replace_na, "None") %>%
+  mutate_if(names(.) %in% The_num_colname, replace_na, 0)
+```
+
+Now, we can as.factor all characteristics columns
+```{r}
+train <- train %>%
+         mutate_if(names(.) %in% char_col_name, as.factor)
+test <- test %>%
+        mutate_if(names(.) %in% char_col_name, as.factor)
+```
+
+# Recheck the missing values after some cleaning
+
+## For the train set
+
+```{r}
+train_miss_col <- mis_value_listing_f(train)
+train %>% select(train_miss_col$col_name) %>% vis_miss()
+```
+```{r}
+summary(train %>% select(train_miss_col$col_name))
+```
+```{r}
+hist.data.frame(train %>% select(train_miss_col$col_name))
+```
+
+## For the test set
+
+```{r warning=FALSE}
+test_miss_col  <- mis_value_listing_f(test)
+test %>% select(test_miss_col$col_name) %>% vis_miss()
+```
+
+```{r}
+summary(test %>% select(test_miss_col$col_name))
+hist.data.frame(test %>% select(test_miss_col$col_name))
+```
+
+## Impute the missing columns 
+
+We will use mean for the numerical columns and use frequency for factorial columns. Again, the `imp_mean_fre_f`, like other functions used in this file, is in the `Utilities.R` file
+
+```{r}
+train <- imp_mean_fre_f(train, opt=1)
+test <- imp_mean_fre_f(test, opt=1)
+```
+
+Now, there is no longer missing values in the sets
+
+```{r}
+sum(is.na(train))
+sum(is.na(test))
+```
+
+
+
+Let's delete the Id column out of the train and test sets since this column will not be useful for running models
+```{r}
+# First check if train and test sets have any Id in common, we see that they have no id in common, this is actualy what we expected
+intersect(train$Id, test$Id)
+# Delete Id out of train and test sets
+train <- train %>% select(-Id)
+test <- test %>% select(-Id)
+```
+
+Now, we have been done with cleaning data, Let's save the data so that we can use later on. We will save them in the folder `house_dat`
+
+```{r}
+write_rds(train, "../house_dat/clean_train.rds")
+write_rds(test, "../house_dat/clean_test.rds")
+```
+
+I will soon have another post for applying AutoML using h2o package with the clean data `r emo::ji("smirk")`
+
+# Reference
+
+[R for data Science](https://r4ds.had.co.nz/)\
+[House Prices - Kaggle data set](https://www.kaggle.com/c/house-prices-advanced-regression-techniques)
