@@ -1,2 +1,2 @@
-# ml_with_r_h2o
-A project using ML with R_h2o 
+# read_ml_book
+Note written when I read the book "The Elements of Statistical Learning: Data Mining, Inference, and Prediction, Second Edition"
