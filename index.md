@@ -5,11 +5,6 @@ profile_picture:
   alt: website picture
 ---
 
-<p>
-  Welcome! This is my note written when I read the book The Elements of Statistical Learning: Data Mining, Inference, and Prediction, Second Edition" by Trevor Hastie, Robert Tibshirani, and Jerome Friedman. Here is the <a href="https://www.amazon.com/Elements-Statistical-Learning-Prediction-Statistics/dp/0387848576">link to the book</a> .
-</p>
-
-
 # Introduction
 
 This project uses the House Prices data gotten from<a href="https://www.kaggle.com/c/house-prices-advanced-regression-techniques">Kaggle/a>
