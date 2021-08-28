@@ -31,7 +31,7 @@ My goal for this project is to provide a detailed explanation of how to use Auto
 Here are some things that I use in this project that you might found in these books or use the link provided:
   - How to reuse functions that you create in  Scrips: use [source](https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/source) of a function.\
   - Using [glue](https://glue.tidyverse.org/) to write shorter and well-organized R code.\
-  - ... many more (You definitely need to read the whole book <a href="(https://r4ds.had.co.nz/6">R for Data Science</a>  :smirk:
+  - ... 
   
 
 
