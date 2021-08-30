@@ -1705,8 +1705,7 @@ div.tocify {
 <div id="a-function-to-create-a-tibble-from-description-file." class="section level2" number="1.1">
 <h2 number="1.1"><span class="header-section-number">1.1</span> A Function to create a tibble from description file.</h2>
 <pre class="r"><code>create_descrip_tibble_f &lt;- function(){
-  # This function will return des_file that contain
-  # index of the Columns:column_description and their values:values&#39;description
+  # Step 1: Create a tibble
   des_file &lt;- read_lines(&quot;../house_dat/data_description.txt&quot;,
                          skip_empty_rows = TRUE)
   
@@ -1718,41 +1717,67 @@ div.tocify {
                   mutate_if(is.character, str_trim)  
   
   des_file &lt;- des_file_new %&gt;% mutate(index = 1:nrow(des_file_new))
-  return(des_file)}
+  
+  # Step2: Create num_fac, a column that distinguish which row is a numerical/factorial columns or factor levels
+  # Find the indexes of columns
+  col_index &lt;- filter(des_file, grepl(&#39;:&#39;, name)) %&gt;% pull(index)
 
-des_tibble &lt;- create_descrip_tibble_f()</code></pre>
-<pre class="r"><code># Check head of the description_tibble
-head(des_tibble)
-&gt;&gt; # A tibble: 6 x 3
-&gt;&gt;   name                                           description               index
-&gt;&gt;   &lt;chr&gt;                                          &lt;chr&gt;                     &lt;int&gt;
-&gt;&gt; 1 MSSubClass: Identifies the type of dwelling i~ &lt;NA&gt;                          1
-&gt;&gt; 2 20                                             1-STORY 1946 &amp; NEWER ALL~     2
-&gt;&gt; 3 30                                             1-STORY 1945 &amp; OLDER          3
-&gt;&gt; 4 40                                             1-STORY W/FINISHED ATTIC~     4
-&gt;&gt; 5 45                                             1-1/2 STORY - UNFINISHED~     5
-&gt;&gt; 6 50                                             1-1/2 STORY FINISHED ALL~     6</code></pre>
+  # Find indexes of numerical columns
+  lag_diff &lt;- diff(col_index, lag = 1, differences = 1)
+  is_num_col &lt;- (1==lag_diff)
+  num_col_index &lt;-  col_index[is_num_col]
+  
+   # Find the indexes of catergorical columns
+   char_col_index &lt;-  col_index[!is_num_col]
+   # Add a column named num_fac to distingush between numeical, factorial column or factor_level_values
+
+   des_file &lt;- des_file %&gt;% 
+              mutate(num_fac = case_when(
+                     index %in% num_col_index ~ &quot;num_col&quot;, 
+                     index %in% char_col_index ~ &quot;fac_col&quot;, 
+                     TRUE                      ~ &quot;fac_val&quot;)) %&gt;%
+              select(index, everything())  #to put index column in the first column
+   # Step 3: Correct the columnnames:description to put them into separated &quot;name&quot; and &quot;description&quot; columns 
+   work_with_col_name&lt;- des_file %&gt;% filter(index %in% col_index) %&gt;%
+                    separate(col = name, into =c(&quot;name&quot;, &quot;description&quot;), sep=&quot;:&quot;) 
+  des_file &lt;- rbind(des_file %&gt;% filter(num_fac ==&quot;fac_val&quot;), work_with_col_name) %&gt;%
+            arrange(index)
+  
+  return(des_file)
+}</code></pre>
+<pre class="r"><code>des_file &lt;- create_descrip_tibble_f()
+des_file
+&gt;&gt; # A tibble: 399 x 4
+&gt;&gt;    index name       description                                          num_fac
+&gt;&gt;    &lt;int&gt; &lt;chr&gt;      &lt;chr&gt;                                                &lt;chr&gt;  
+&gt;&gt;  1     1 MSSubClass &quot; Identifies the type of dwelling involved in the s~ fac_col
+&gt;&gt;  2     2 20         &quot;1-STORY 1946 &amp; NEWER ALL STYLES&quot;                    fac_val
+&gt;&gt;  3     3 30         &quot;1-STORY 1945 &amp; OLDER&quot;                               fac_val
+&gt;&gt;  4     4 40         &quot;1-STORY W/FINISHED ATTIC ALL AGES&quot;                  fac_val
+&gt;&gt;  5     5 45         &quot;1-1/2 STORY - UNFINISHED ALL AGES&quot;                  fac_val
+&gt;&gt;  6     6 50         &quot;1-1/2 STORY FINISHED ALL AGES&quot;                      fac_val
+&gt;&gt;  7     7 60         &quot;2-STORY 1946 &amp; NEWER&quot;                               fac_val
+&gt;&gt;  8     8 70         &quot;2-STORY 1945 &amp; OLDER&quot;                               fac_val
+&gt;&gt;  9     9 75         &quot;2-1/2 STORY ALL AGES&quot;                               fac_val
+&gt;&gt; 10    10 80         &quot;SPLIT OR MULTI-LEVEL&quot;                               fac_val
+&gt;&gt; # ... with 389 more rows</code></pre>
 </div>
 <div id="a-function-to-exclude-the-column-names-having-na-means-none" class="section level2" number="1.2">
 <h2 number="1.2"><span class="header-section-number">1.2</span> A function to exclude the column names having NA means None</h2>
 <pre class="r"><code>
 find_col_name_f &lt;- function(des_tibble){
-  # output: 
-  # Thecolname: a vector contains names of the columns having NA means &quot;None&quot;
   #Find the index values of rows having NA means &quot;None&quot;
-  Na_index &lt;- des_tibble %&gt;% filter(name ==&quot;NA&quot;) %&gt;% pull(index) 
-  
-  # Find the row index of all column names
-  Col_index &lt;- filter(des_tibble, grepl(&#39;:&#39;, name)) %&gt;% pull(index)
-  
-  # The column index of a column that contains NA are the first ones that is smaller than the Na_index 
-  Col_contain_Na &lt;- c()
+  Na_index &lt;- des_file %&gt;% filter(name ==&quot;NA&quot;) %&gt;% pull(index) 
+
+  #Filter the row index of column names
+  Col_index &lt;- des_file %&gt;% filter(num_fac==&quot;fac_col&quot;) %&gt;% pull(index)
+
+  # Find indexes of columns that contains NA means &quot;None&quot;
+  Col_contain_Na_index &lt;- c()
   for (i in Na_index){
-    Col_contain_Na &lt;- append(Col_contain_Na,max(Col_index[Col_index &lt; i]))}
-  # Get the column names of the columns having NA means &quot;None&quot;
-  Thecolname &lt;- des_tibble %&gt;% filter(index %in% Col_contain_Na) %&gt;% select(name)
-  Thecolname &lt;- Thecolname %&gt;%
-  separate(name, c(&quot;Colname&quot;, &quot;Descrip&quot;), &quot;:&quot;) %&gt;% pull(Colname)
+    Col_contain_Na_index &lt;- append(Col_contain_Na_index,max(Col_index[Col_index &lt; i]) )}
+  # Take names of columns that contains NA means &quot;None&quot; based on it indexes
+  Thecolname &lt;- des_file %&gt;% filter(index %in% Col_contain_Na_index) %&gt;% pull(name)
   return(Thecolname)
 }</code></pre>
 <pre class="r"><code>(Thecolname &lt;- find_col_name_f(des_tibble))
@@ -1765,9 +1790,11 @@ find_col_name_f &lt;- function(des_tibble){
 <h1 number="2"><span class="header-section-number">2</span> Explain the two functions above</h1>
 <div id="explain-the-steps-of-creating-a-description-tibble-from-data_description.txt-file" class="section level2" number="2.1">
 <h2 number="2.1"><span class="header-section-number">2.1</span> Explain the steps of creating a description tibble from data_description.txt file</h2>
+<div id="step-1-create-a-temprorary-tibble-this-tibble-will-be-modified-later-on" class="section level3" number="2.1.1">
+<h3 number="2.1.1"><span class="header-section-number">2.1.1</span> Step 1: Create a temprorary tibble, this tibble will be modified later on</h3>
 <p>First, using read_lines to read the data_description.txt file. We see that the column names are in the rows having “:” that seperate column names and columns’ description. The factor names are seperated with their desciption by &quot;</p>
-<pre class="r"><code>description_file &lt;- read_lines(&quot;../house_dat/data_description.txt&quot;, skip_empty_rows = TRUE)
-head(description_file)
+<pre class="r"><code>des_file &lt;- read_lines(&quot;../house_dat/data_description.txt&quot;, skip_empty_rows = TRUE)
+head(des_file)
 &gt;&gt; [1] &quot;MSSubClass: Identifies the type of dwelling involved in the sale.\t&quot;
 &gt;&gt; [2] &quot;        20\t1-STORY 1946 &amp; NEWER ALL STYLES&quot;                        
 &gt;&gt; [3] &quot;        30\t1-STORY 1945 &amp; OLDER&quot;                                   
@@ -1777,7 +1804,7 @@ head(description_file)
 <p>We will want to make a tibble. Note that tibbles are dataframes, but they tweak some older behaviours to make life a little easier (<a href="https://r4ds.had.co.nz/tibbles.html">Read about tibble from here</a>)</p>
 <p>The tibble created will have name and description columns. We, therefore, want to add the column names (name, description) to the data.</p>
 <pre class="r"><code>header &lt;- c(&quot;name\tdescription\n&quot;)
-new_discription_file &lt;- str_c(header, description_file)
+new_discription_file &lt;- str_c(header, des_file)
 head(new_discription_file)
 &gt;&gt; [1] &quot;name\tdescription\nMSSubClass: Identifies the type of dwelling involved in the sale.\t&quot;
 &gt;&gt; [2] &quot;name\tdescription\n        20\t1-STORY 1946 &amp; NEWER ALL STYLES&quot;                        
@@ -1801,8 +1828,8 @@ head(new_discription_file)
 <p>Now, we want to remove rows with values are (“name”, “description”). Also, we want to trim the whitespaces of before and after strings in the data. The last thing we do in this step is to add index to the tiblle, we will use the index to find the index of values NA (means None) and also find index of the columns having those values NA (means None)</p>
 <pre class="r"><code>new_discription_file &lt;- new_discription_file %&gt;% filter(name != &quot;name&quot;)  %&gt;%
                         mutate_if(is.character, str_trim) 
-description_file &lt;- new_discription_file  %&gt;% mutate(index = 1: nrow(new_discription_file))
-head(description_file)
+des_file &lt;- new_discription_file  %&gt;% mutate(index = 1: nrow(new_discription_file))
+head(des_file)
 &gt;&gt; # A tibble: 6 x 3
 &gt;&gt;   name                                           description               index
 &gt;&gt;   &lt;chr&gt;                                          &lt;chr&gt;                     &lt;int&gt;
@@ -1812,17 +1839,20 @@ head(description_file)
 &gt;&gt; 4 40                                             1-STORY W/FINISHED ATTIC~     4
 &gt;&gt; 5 45                                             1-1/2 STORY - UNFINISHED~     5
 &gt;&gt; 6 50                                             1-1/2 STORY FINISHED ALL~     6</code></pre>
-<div id="find-the-column-indexes-of-all-column-in-the-description-file" class="section level3" number="2.1.1">
-<h3 number="2.1.1"><span class="header-section-number">2.1.1</span> Find the column indexes of all column in the description file</h3>
-<pre class="r"><code>col_index &lt;- filter(description_file, grepl(&#39;:&#39;, name)) %&gt;% pull(index)
+</div>
+<div id="step-2-create-a-num_fac-that-have-values-in-num_col-fac_colfac_val-which-means-the-associative-row-is-a-name-of-a-numerical-column-a-factorial-column-a-factor-level-value" class="section level3" number="2.1.2">
+<h3 number="2.1.2"><span class="header-section-number">2.1.2</span> Step 2: Create a num_fac that have values in <span class="math inline">\(\{&quot;num_col&quot;, &quot;fac_col&quot;,&quot;fac_val&quot;)\}\)</span> which means the associative row is a name of <span class="math inline">\(\{a numerical column, a factorial column, a factor level value\}\)</span></h3>
+<ul>
+<li>Find the column indexes of all column in the description file</li>
+</ul>
+<pre class="r"><code>col_index &lt;- filter(des_file, grepl(&#39;:&#39;, name)) %&gt;% pull(index)
 cat(&quot;col_index: \n&quot;, col_index, &quot;\n&quot;)
 &gt;&gt; col_index: 
 &gt;&gt;  1 18 27 28 29 32 36 41 46 51 57 61 87 97 107 113 122 133 144 145 146 153 162 180 198 204 205 211 217 224 231 238 244 252 253 261 262 263 264 271 277 280 286 287 288 289 290 291 292 293 294 295 296 302 303 312 313 320 328 329 334 335 336 343 350 354 355 356 357 358 359 360 366 372 379 380 381 382 393</code></pre>
-<pre class="r"><code># description_file &lt;- description_file %&gt;% mutate(is_col = ifelse(index %in% Col_index, 1, 0))</code></pre>
-</div>
-<div id="find-if-the-column-in-the-description-files-are-numerical-or-factorial-columns" class="section level3" number="2.1.2">
-<h3 number="2.1.2"><span class="header-section-number">2.1.2</span> Find if the column in the description files are numerical or factorial columns</h3>
-<p>We first find the numerical columns by using Col_index indexes from the description_file indexes of numerical columns are the rows in the description file that are followed by index of another column (not factor_level). In the below, they are the rows in description_file having lag_diff=1</p>
+<ul>
+<li>Find if the column in the description files are numerical or factorial columns: we will find indexes of those columns</li>
+</ul>
+<p>We find the numerical columns by using Col_index indexes from the des_file indexes of numerical columns are the rows in the description file that are followed by index of another column (not factor_level). In the below, they are the rows in des_file having lag_diff=1</p>
 <pre class="r"><code>lag_diff &lt;- diff(col_index, lag = 1, differences = 1)
 cat(&quot;lag_diff: &quot;, lag_diff, &quot;\n \n&quot;)
 &gt;&gt; lag_diff:  17 9 1 1 3 4 5 5 5 6 4 26 10 10 6 9 11 11 1 1 7 9 18 18 6 1 6 6 7 7 7 6 8 1 8 1 1 1 7 6 3 6 1 1 1 1 1 1 1 1 1 1 6 1 9 1 7 8 1 5 1 1 7 7 4 1 1 1 1 1 1 6 6 7 1 1 1 11 
@@ -1835,14 +1865,13 @@ cat(&quot;num_col_index:\n&quot;, num_col_index, &quot;\n&quot;)
 <p>The characteristic columns are just the ones which are not numerical columns :)</p>
 <pre class="r"><code>char_col_index &lt;-  col_index[!is_num_col]</code></pre>
 <p>Now, we want to add a column named num_fac to distingush between numeical or factorial column, num_fac = 1 if is a numerical column and num_fac = 0 if is a factorial column</p>
-<pre class="r"><code>description_file &lt;- description_file %&gt;% 
+<pre class="r"><code>des_file &lt;- des_file %&gt;% 
   mutate(num_fac = case_when(
                               index %in% num_col_index ~ &quot;num_col&quot;, 
                               index %in% char_col_index ~ &quot;fac_col&quot;, 
                               TRUE                      ~ &quot;fac_val&quot;)) %&gt;%
   select(index, everything())  #to put index column in the first column
- </code></pre>
-<pre class="r"><code>head(description_file)
+head(des_file) 
 &gt;&gt; Warning: `...` is not empty.
 &gt;&gt; 
 &gt;&gt; We detected these problematic arguments:
@@ -1859,11 +1888,13 @@ cat(&quot;num_col_index:\n&quot;, num_col_index, &quot;\n&quot;)
 &gt;&gt; 4     4 40                                       1-STORY W/FINISHED ATT~ fac_val
 &gt;&gt; 5     5 45                                       1-1/2 STORY - UNFINISH~ fac_val
 &gt;&gt; 6     6 50                                       1-1/2 STORY FINISHED A~ fac_val</code></pre>
-<p>Now, we put the decription of the (numerical and factorial) columns in to the place that it should be</p>
-<pre class="r"><code>work_for_col_name&lt;- description_file %&gt;% filter(index %in% col_index) %&gt;%
-                    separate(name, c(&quot;name&quot;, &quot;description&quot;), &quot;:&quot;) %&gt;%
-  select(c(&quot;index&quot;, &quot;name&quot;, &quot;description&quot;))</code></pre>
-<pre class="r"><code>work_for_col_name
+</div>
+<div id="separate-name-and-description-of-datas-columns" class="section level3" number="2.1.3">
+<h3 number="2.1.3"><span class="header-section-number">2.1.3</span> Separate name and description of data’s columns</h3>
+<p>First, we will filter the rows that contain column names and their descriptions , we put the decription of the (numerical and factorial) columns in to the place that it should be and combind it back to the des_file</p>
+<pre class="r"><code>work_with_col_name&lt;- des_file %&gt;% filter(index %in% col_index) %&gt;%
+                    separate(col = name, into =c(&quot;name&quot;, &quot;description&quot;), sep=&quot;:&quot;) 
+head(work_with_col_name)
 &gt;&gt; Warning: `...` is not empty.
 &gt;&gt; 
 &gt;&gt; We detected these problematic arguments:
@@ -1871,48 +1902,18 @@ cat(&quot;num_col_index:\n&quot;, num_col_index, &quot;\n&quot;)
 &gt;&gt; 
 &gt;&gt; These dots only exist to allow future extensions and should be empty.
 &gt;&gt; Did you misspecify an argument?
-&gt;&gt; # A tibble: 79 x 3
-&gt;&gt;    index name        description                                                
-&gt;&gt;    &lt;int&gt; &lt;chr&gt;       &lt;chr&gt;                                                      
-&gt;&gt;  1     1 MSSubClass  &quot; Identifies the type of dwelling involved in the sale.&quot;   
-&gt;&gt;  2    18 MSZoning    &quot; Identifies the general zoning classification of the sale~
-&gt;&gt;  3    27 LotFrontage &quot; Linear feet of street connected to property&quot;             
-&gt;&gt;  4    28 LotArea     &quot; Lot size in square feet&quot;                                 
-&gt;&gt;  5    29 Street      &quot; Type of road access to property&quot;                         
-&gt;&gt;  6    32 Alley       &quot; Type of alley access to property&quot;                        
-&gt;&gt;  7    36 LotShape    &quot; General shape of property&quot;                               
-&gt;&gt;  8    41 LandContour &quot; Flatness of the property&quot;                                
-&gt;&gt;  9    46 Utilities   &quot; Type of utilities available&quot;                             
-&gt;&gt; 10    51 LotConfig   &quot; Lot configuration&quot;                                       
-&gt;&gt; # ... with 69 more rows</code></pre>
-<pre class="r"><code>
-#reference: https://alistaire.rbind.io/blog/coalescing-joins/
-coalesce_join &lt;- function(x, y, 
-                          by = NULL, suffix = c(&quot;.x&quot;, &quot;.y&quot;), 
-                          join = dplyr::full_join, ...) {
-    joined &lt;- join(x, y, by = by, suffix = suffix, ...)
-    # names of desired output
-    cols &lt;- union(names(x), names(y))
-    
-    to_coalesce &lt;- names(joined)[!names(joined) %in% cols]
-    suffix_used &lt;- suffix[ifelse(endsWith(to_coalesce, suffix[1]), 1, 2)]
-    # remove suffixes and deduplicate
-    to_coalesce &lt;- unique(substr(
-        to_coalesce, 
-        1, 
-        nchar(to_coalesce) - nchar(suffix_used)
-    ))
-    
-    coalesced &lt;- purrr::map_dfc(to_coalesce, ~dplyr::coalesce(
-        joined[[paste0(.x, suffix[1])]], 
-        joined[[paste0(.x, suffix[2])]]
-    ))
-    names(coalesced) &lt;- to_coalesce
-    
-    dplyr::bind_cols(joined, coalesced)[cols]
-}</code></pre>
-<pre class="r"><code>try_data &lt;- coalesce_join(work_for_col_name, description_file, by=&quot;index&quot; )</code></pre>
-<pre class="r"><code>try_data
+&gt;&gt; # A tibble: 6 x 4
+&gt;&gt;   index name        description                                          num_fac
+&gt;&gt;   &lt;int&gt; &lt;chr&gt;       &lt;chr&gt;                                                &lt;chr&gt;  
+&gt;&gt; 1     1 MSSubClass  &quot; Identifies the type of dwelling involved in the s~ fac_col
+&gt;&gt; 2    18 MSZoning    &quot; Identifies the general zoning classification of t~ fac_col
+&gt;&gt; 3    27 LotFrontage &quot; Linear feet of street connected to property&quot;       num_col
+&gt;&gt; 4    28 LotArea     &quot; Lot size in square feet&quot;                           num_col
+&gt;&gt; 5    29 Street      &quot; Type of road access to property&quot;                   fac_col
+&gt;&gt; 6    32 Alley       &quot; Type of alley access to property&quot;                  fac_col</code></pre>
+<pre class="r"><code>des_file &lt;- rbind(des_file %&gt;% filter(num_fac ==&quot;fac_val&quot;), work_with_col_name) %&gt;%
+            arrange(index)
+head(des_file)
 &gt;&gt; Warning: `...` is not empty.
 &gt;&gt; 
 &gt;&gt; We detected these problematic arguments:
@@ -1920,46 +1921,16 @@ coalesce_join &lt;- function(x, y,
 &gt;&gt; 
 &gt;&gt; These dots only exist to allow future extensions and should be empty.
 &gt;&gt; Did you misspecify an argument?
-&gt;&gt; # A tibble: 399 x 4
-&gt;&gt;    index name        description                                         num_fac
-&gt;&gt;    &lt;int&gt; &lt;chr&gt;       &lt;chr&gt;                                               &lt;chr&gt;  
-&gt;&gt;  1     1 MSSubClass  &quot; Identifies the type of dwelling involved in the ~ fac_col
-&gt;&gt;  2    18 MSZoning    &quot; Identifies the general zoning classification of ~ fac_col
-&gt;&gt;  3    27 LotFrontage &quot; Linear feet of street connected to property&quot;      num_col
-&gt;&gt;  4    28 LotArea     &quot; Lot size in square feet&quot;                          num_col
-&gt;&gt;  5    29 Street      &quot; Type of road access to property&quot;                  fac_col
-&gt;&gt;  6    32 Alley       &quot; Type of alley access to property&quot;                 fac_col
-&gt;&gt;  7    36 LotShape    &quot; General shape of property&quot;                        fac_col
-&gt;&gt;  8    41 LandContour &quot; Flatness of the property&quot;                         fac_col
-&gt;&gt;  9    46 Utilities   &quot; Type of utilities available&quot;                      fac_col
-&gt;&gt; 10    51 LotConfig   &quot; Lot configuration&quot;                                fac_col
-&gt;&gt; # ... with 389 more rows</code></pre>
-<pre class="r"><code>description_file %&gt;% filter(num_fac ==&quot;fac_val&quot;)
-&gt;&gt; Warning: `...` is not empty.
-&gt;&gt; 
-&gt;&gt; We detected these problematic arguments:
-&gt;&gt; * `needs_dots`
-&gt;&gt; 
-&gt;&gt; These dots only exist to allow future extensions and should be empty.
-&gt;&gt; Did you misspecify an argument?
-&gt;&gt; # A tibble: 320 x 4
-&gt;&gt;    index name  description                       num_fac
-&gt;&gt;    &lt;int&gt; &lt;chr&gt; &lt;chr&gt;                             &lt;chr&gt;  
-&gt;&gt;  1     2 20    1-STORY 1946 &amp; NEWER ALL STYLES   fac_val
-&gt;&gt;  2     3 30    1-STORY 1945 &amp; OLDER              fac_val
-&gt;&gt;  3     4 40    1-STORY W/FINISHED ATTIC ALL AGES fac_val
-&gt;&gt;  4     5 45    1-1/2 STORY - UNFINISHED ALL AGES fac_val
-&gt;&gt;  5     6 50    1-1/2 STORY FINISHED ALL AGES     fac_val
-&gt;&gt;  6     7 60    2-STORY 1946 &amp; NEWER              fac_val
-&gt;&gt;  7     8 70    2-STORY 1945 &amp; OLDER              fac_val
-&gt;&gt;  8     9 75    2-1/2 STORY ALL AGES              fac_val
-&gt;&gt;  9    10 80    SPLIT OR MULTI-LEVEL              fac_val
-&gt;&gt; 10    11 85    SPLIT FOYER                       fac_val
-&gt;&gt; # ... with 310 more rows</code></pre>
-<pre class="r"><code>try2_data &lt;- full_join(description_file %&gt;% filter(num_fac ==&quot;fac_val&quot;), try_data)
-&gt;&gt; Joining, by = c(&quot;index&quot;, &quot;name&quot;, &quot;description&quot;, &quot;num_fac&quot;)</code></pre>
-<pre class="r"><code>try2_data &lt;- try2_data%&gt;% arrange(index)</code></pre>
-<pre class="r"><code>try2_data
+&gt;&gt; # A tibble: 6 x 4
+&gt;&gt;   index name       description                                           num_fac
+&gt;&gt;   &lt;int&gt; &lt;chr&gt;      &lt;chr&gt;                                                 &lt;chr&gt;  
+&gt;&gt; 1     1 MSSubClass &quot; Identifies the type of dwelling involved in the sa~ fac_col
+&gt;&gt; 2     2 20         &quot;1-STORY 1946 &amp; NEWER ALL STYLES&quot;                     fac_val
+&gt;&gt; 3     3 30         &quot;1-STORY 1945 &amp; OLDER&quot;                                fac_val
+&gt;&gt; 4     4 40         &quot;1-STORY W/FINISHED ATTIC ALL AGES&quot;                   fac_val
+&gt;&gt; 5     5 45         &quot;1-1/2 STORY - UNFINISHED ALL AGES&quot;                   fac_val
+&gt;&gt; 6     6 50         &quot;1-1/2 STORY FINISHED ALL AGES&quot;                       fac_val</code></pre>
+<pre class="r"><code>des_file
 &gt;&gt; Warning: `...` is not empty.
 &gt;&gt; 
 &gt;&gt; We detected these problematic arguments:
@@ -1986,17 +1957,15 @@ coalesce_join &lt;- function(x, y,
 <div id="step-2-find-the-index-of-columns-having-values-na-means-none" class="section level2" number="2.2">
 <h2 number="2.2"><span class="header-section-number">2.2</span> Step 2: Find the index of columns having values NA means “None”</h2>
 <p>Find the index values of rows having NA means “None”</p>
-<pre class="r"><code>Na_index &lt;- description_file %&gt;% filter(name ==&quot;NA&quot;) %&gt;% pull(index) 
+<pre class="r"><code>Na_index &lt;- des_file %&gt;% filter(name ==&quot;NA&quot;) %&gt;% pull(index) 
 Na_index
 &gt;&gt;  [1]  35 230 237 243 251 260 319 327 333 342 349 365 371 378</code></pre>
 <p>Filter the row index of column names</p>
-<pre class="r"><code>Col_index &lt;- filter(description_file, grepl(&#39;:&#39;, name)) %&gt;% pull(index)
+<pre class="r"><code>Col_index &lt;- des_file %&gt;% filter(num_fac==&quot;fac_col&quot;) %&gt;% pull(index)
 Col_index
-&gt;&gt;  [1]   1  18  27  28  29  32  36  41  46  51  57  61  87  97 107 113 122 133 144
-&gt;&gt; [20] 145 146 153 162 180 198 204 205 211 217 224 231 238 244 252 253 261 262 263
-&gt;&gt; [39] 264 271 277 280 286 287 288 289 290 291 292 293 294 295 296 302 303 312 313
-&gt;&gt; [58] 320 328 329 334 335 336 343 350 354 355 356 357 358 359 360 366 372 379 380
-&gt;&gt; [77] 381 382 393</code></pre>
+&gt;&gt;  [1]   1  18  29  32  36  41  46  51  57  61  87  97 107 113 122 133 146 153 162
+&gt;&gt; [20] 180 198 205 211 217 224 231 238 244 253 264 271 277 280 296 303 313 320 329
+&gt;&gt; [39] 336 343 350 360 366 372 382 393</code></pre>
 <p>The column index of a column that contains NA are the first ones that is smaller than the Na_index</p>
 <pre class="r"><code>Col_contain_Na &lt;- c()
 for (i in Na_index){
@@ -2005,33 +1974,27 @@ for (i in Na_index){
 Col_contain_Na
 &gt;&gt;  [1]  32 224 231 238 244 253 313 320 329 336 343 360 366 372</code></pre>
 <p>So, now we only need to print the columns names that contains NA based on it indexes</p>
-<pre class="r"><code>Thecolname &lt;- description_file %&gt;% filter(index %in% Col_contain_Na) %&gt;% select(name)
+<pre class="r"><code>Thecolname &lt;- des_file %&gt;% filter(index %in% Col_contain_Na) %&gt;% select(name)
 
 Thecolname
 &gt;&gt; # A tibble: 14 x 1
-&gt;&gt;    name                                                              
-&gt;&gt;    &lt;chr&gt;                                                             
-&gt;&gt;  1 Alley: Type of alley access to property                           
-&gt;&gt;  2 BsmtQual: Evaluates the height of the basement                    
-&gt;&gt;  3 BsmtCond: Evaluates the general condition of the basement         
-&gt;&gt;  4 BsmtExposure: Refers to walkout or garden level walls             
-&gt;&gt;  5 BsmtFinType1: Rating of basement finished area                    
-&gt;&gt;  6 BsmtFinType2: Rating of basement finished area (if multiple types)
-&gt;&gt;  7 FireplaceQu: Fireplace quality                                    
-&gt;&gt;  8 GarageType: Garage location                                       
-&gt;&gt;  9 GarageFinish: Interior finish of the garage                       
-&gt;&gt; 10 GarageQual: Garage quality                                        
-&gt;&gt; 11 GarageCond: Garage condition                                      
-&gt;&gt; 12 PoolQC: Pool quality                                              
-&gt;&gt; 13 Fence: Fence quality                                              
-&gt;&gt; 14 MiscFeature: Miscellaneous feature not covered in other categories</code></pre>
-<p>The above Thecolname contains information in the form: “col_nam: col_description”, we will seperate them in to seperated columns</p>
-<pre class="r"><code>Thecolname &lt;- Thecolname %&gt;%
-  separate(name, c(&quot;Colname&quot;, &quot;Descrip&quot;), &quot;:&quot;) %&gt;% pull(Colname)
-Thecolname
-&gt;&gt;  [1] &quot;Alley&quot;        &quot;BsmtQual&quot;     &quot;BsmtCond&quot;     &quot;BsmtExposure&quot; &quot;BsmtFinType1&quot;
-&gt;&gt;  [6] &quot;BsmtFinType2&quot; &quot;FireplaceQu&quot;  &quot;GarageType&quot;   &quot;GarageFinish&quot; &quot;GarageQual&quot;  
-&gt;&gt; [11] &quot;GarageCond&quot;   &quot;PoolQC&quot;       &quot;Fence&quot;        &quot;MiscFeature&quot;</code></pre>
+&gt;&gt;    name        
+&gt;&gt;    &lt;chr&gt;       
+&gt;&gt;  1 Alley       
+&gt;&gt;  2 BsmtQual    
+&gt;&gt;  3 BsmtCond    
+&gt;&gt;  4 BsmtExposure
+&gt;&gt;  5 BsmtFinType1
+&gt;&gt;  6 BsmtFinType2
+&gt;&gt;  7 FireplaceQu 
+&gt;&gt;  8 GarageType  
+&gt;&gt;  9 GarageFinish
+&gt;&gt; 10 GarageQual  
+&gt;&gt; 11 GarageCond  
+&gt;&gt; 12 PoolQC      
+&gt;&gt; 13 Fence       
+&gt;&gt; 14 MiscFeature</code></pre>
+<p><a href="https://alistaire.rbind.io/blog/coalescing-joins/" class="uri">https://alistaire.rbind.io/blog/coalescing-joins/</a></p>
 </div>
 </div>
 
