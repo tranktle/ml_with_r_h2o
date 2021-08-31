@@ -1,6 +1,10 @@
 
 Here is the link to [2_WorkWithDescriptionFile](https://htmlpreview.github.io/?https://github.com/tranktle/ml_with_r_h2o/blob/main/ml_with_r_h2o/code/2_WorkWithDescriptionFile.html#2_Explain_the_two_functions_above)
+
 You can skip this to jump into the part [1_CleanThedata](https://htmlpreview.github.io/?https://github.com/tranktle/ml_with_r_h2o/blob/main/ml_with_r_h2o/code/1_Introduction_ReadAndExploreData.html)
+
+
+
 
 
 
