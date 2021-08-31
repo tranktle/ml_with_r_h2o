@@ -1,7 +1,7 @@
 ---
-layout: work
+layout: about
 title: About
-slug: /work
+slug: /about
 items:
   - title: My webpage
     image:
